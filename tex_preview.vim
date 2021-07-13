@@ -3,6 +3,8 @@ let s:packages = ['\usepackage[active,tightpage]{preview}']
 let s:job = 0
 let s:job_mk_img = 0
 let s:job_show_img = 0
+let s:edit_bufnr = -1
+let s:edit_winid = -1
 
 function! s:show_img(job, status, event) abort
   if a:status
@@ -14,7 +16,7 @@ function! s:show_img(job, status, event) abort
   let s:job = job
 endfunction
 
-function! Preview() abort
+function! s:preview() abort
   let bufline = getbufline('%', 1, '$')
   let bufline[0] = '$' . bufline[0]
   let bufline[-1] = bufline[-1] . '$'
@@ -33,6 +35,15 @@ function! Preview() abort
   " let s:job = jobstart(['./preview_image.sh', 'test0', '10', '10', '100'])
 endfunction
 
+function! Start_preview(mode) abort
+  call s:init_edit_buffer()
+  augroup tex_preview
+    autocmd!
+    autocmd TextChangedI,TextChanged <buffer> call s:preview()
+    autocmd BufLeave,VimLeave <buffer> call s:close_job()
+  augroup END
+endfunction
+
 function! s:close_platex_job() abort
   if s:job_mk_img <= 0
     return
@@ -45,6 +56,72 @@ function! s:close_platex_job() abort
   endif
 
   let s:job_mk_img = 0
+endfunction
+
+function! s:init_edit_buffer() abort
+  if win_findbuf(s:edit_bufnr) == [s:edit_winid]
+    call win_gotoid(s:edit_winid)
+    return
+  endif
+
+  let edit_bufname = 'tex_preview://'
+  " call nvim_open_win(bufnr('%'), v:true, {
+  "      \ 'relative': 'win',
+  "      \ 'win': win_getid(),
+  "      \ 'anchor': "SW",
+  "      \ 'row': str2nr(winheight(0)),
+  "      \ 'col': str2nr(0),
+  "      \ 'width': winwidth(0),
+  "      \ 'height': 5,
+  "      \ })
+  let bufnr = bufadd(edit_bufname)
+  topleft split
+  execute bufnr 'buffer'
+  resize 7
+
+  let s:edit_bufnr = bufnr('%')
+  let s:edit_winid = win_getid()
+
+  setlocal bufhidden=hide
+  setlocal buftype=nofile
+  setlocal nolist
+  setlocal nobuflisted
+  setlocal nofoldenable
+  setlocal foldcolumn=0
+  setlocal colorcolumn=
+  setlocal nonumber
+  setlocal norelativenumber
+  setlocal noswapfile
+
+  nnoremap <buffer><silent> <Plug>(command_insert_line)
+        \ :<C-u>call <SID>insert_line()<CR>
+  inoremap <buffer><silent> <Plug>(command_insert_line)
+        \ <ESC>:call <SID>insert_line()<CR>
+
+  nnoremap <buffer><silent> <Plug>(command_quit)
+        \ :<C-u>close<CR>
+
+  nmap <buffer><CR> <Plug>(command_insert_line)
+  nmap <buffer> q   <Plug>(command_quit)
+
+  call deletebufline('%', 1, '$')
+  setlocal filetype=tex
+endfunction
+
+function! s:insert_line() abort
+  stopinsert
+  let lines = getbufline('%', 1, '$')
+  call substitute(lines[-1], '\n$', '', '')
+  close
+  call s:paste(lines)
+endfunction
+
+function! s:paste(value) abort
+  let save_regcont = @"
+  let save_regtype = getregtype('"')
+  call setreg('"', a:value, 'v')
+  normal! ""p
+  call setreg('"', save_regcont, save_regtype)
 endfunction
 
 function! s:close_job() abort
@@ -61,10 +138,7 @@ function! s:close_job() abort
   let s:job = 0
 endfunction
 
-function! Start_preview() abort
-  augroup tex_preview
-    autocmd!
-    autocmd TextChangedI,TextChanged <buffer> call Preview()
-    autocmd BufLeave,VimLeave <buffer> call s:close_job()
-  augroup END
-endfunction
+inoremap <buffer><silent> <Plug>(tex_preview_start)
+      \ <ESC>:call Start_preview('i')<CR>
+
+imap <c-y> <Plug>(tex_preview_start)
